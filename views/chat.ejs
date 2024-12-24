@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <title>Chat</title>
+</head>
+<body class="bg-gray-900 text-gray-200">
+    <main class="container mx-auto h-screen p-4">
+        <section class="flex flex-col md:flex-row gap-6 h-full">
+            <!-- Sidebar -->
+            <div class="w-full md:w-1/4 bg-gray-800 rounded-lg shadow-xl flex flex-col">
+                <header class="p-4 bg-indigo-600 text-white rounded-t-lg text-center">
+                    <h2 class="text-lg font-semibold">Chats</h2>
+                </header>
+                <div id="onlineUsers" class="flex-grow overflow-y-auto p-4 space-y-4">
+                    <!-- User Template -->
+                    <div class="flex items-center gap-4 p-3 hover:bg-indigo-500 hover:text-white rounded-lg cursor-pointer transition">
+                        <i class="ri-user-3-fill text-2xl"></i>
+                        <div>
+                            <p class="font-medium">John Doe</p>
+                            <p class="text-sm text-gray-400">Hey, how's it going?</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Section -->
+            <div class="w-full md:flex-1 bg-gray-800 rounded-lg shadow-xl flex flex-col">
+                <!-- Chat Header -->
+                <header class="p-4 bg-indigo-600 flex items-center gap-4 rounded-t-lg">
+                    <i class="ri-user-3-fill text-2xl"></i>
+                    <h2 id="chatHeader" class="text-lg font-semibold truncate">Select a User</h2>
+                </header>
+
+                <!-- Messages -->
+                <div
+                    id="conversation"
+                    class="flex-grow overflow-y-auto p-4 bg-gray-700 space-y-4"
+                >
+                    <!-- Message Placeholder -->
+                </div>
+
+                <!-- Input -->
+                <div class="p-4 bg-gray-900 border-t border-gray-700 flex items-center gap-3">
+                    <input
+                        id="messageInput"
+                        type="text"
+                        class="flex-grow p-3 bg-gray-800 text-gray-200 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
+                        placeholder="Type a message..."
+                    />
+                    <button
+                        id="sendMessage"
+                        class="bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-500 transition"
+                    >
+                        Send
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+<script>
+    const user = <%- JSON.stringify(user) %>;
+    const socket = io();
+
+    let receiverId = null;
+
+    socket.emit("join", user);
+
+    socket.on("updateOnlineUsers", (users) => {
+    const container = document.getElementById("onlineUsers");
+    container.innerHTML = ""; // Clear the list
+    users.forEach(({ _id, displayName, image, socketId, lastseen }) => {
+        // Format the last seen time if the user is offline
+        const status = socketId 
+            ? "Online" 
+            : `Last seen: ${new Date(lastseen).toLocaleDateString()} at ${new Date(lastseen).toLocaleTimeString()}`;
+
+        container.innerHTML += `
+            <div class="flex items-center gap-4 p-3 hover:bg-indigo-500 hover:text-white rounded-lg cursor-pointer transition"
+                 onclick="selectUser('${_id}', '${displayName}')">
+                <img src="${image}" alt="${displayName}" class="w-12 h-12 rounded-full border-2 border-gray-700" />
+                <div>
+                    <p class="font-medium">${displayName}</p>
+                    <p class="text-sm text-gray-400">${status}</p>
+                </div>
+            </div>`;
+    });
+});
+
+
+    function selectUser(id, name) {
+        receiverId = id;
+        const chatHeader = document.getElementById("chatHeader");
+        const convo = document.getElementById("conversation");
+
+        chatHeader.textContent = `Chat with ${name}`;
+        convo.innerHTML = '<p class="text-gray-400 text-sm">Loading messages...</p>';
+
+        fetch(`/messages/${id}`)
+            .then((res) => res.json())
+            .then((messages) => {
+                convo.innerHTML = ""; 
+                messages.forEach(({ senderId, message }) => {
+                    convo.innerHTML += renderMessage(senderId === user._id ? "You" : name, message, senderId === user._id);
+                });
+                convo.scrollTop = convo.scrollHeight; 
+            })
+            .catch(() => {
+                convo.innerHTML = `<p class="text-red-500 text-sm">Failed to load messages.</p>`;
+            });
+    }
+
+    document.getElementById("sendMessage").addEventListener("click", sendMessage);
+
+    function sendMessage() {
+        const input = document.getElementById("messageInput");
+        const message = input.value.trim();
+
+        if (receiverId && message) {
+            socket.emit("message", { receiverId, message });
+            input.value = "";
+            const convo = document.getElementById("conversation");
+            convo.innerHTML += renderMessage("You", message, true);
+            convo.scrollTop = convo.scrollHeight; 
+        }
+    }
+
+    socket.on("message", ({ senderId, message }) => {
+        const convo = document.getElementById("conversation");
+        const senderName = senderId === user._id ? "You" : "Friend";
+        convo.innerHTML += renderMessage(senderName, message, senderId === user._id);
+        convo.scrollTop = convo.scrollHeight; 
+    });
+
+    function renderMessage(sender, message, isSender) {
+        return `
+            <div class="flex ${isSender ? "justify-end" : "justify-start"} items-center gap-2">
+                <div class="max-w-sm p-3 ${
+                    isSender ? "bg-indigo-500 text-white" : "bg-gray-600 text-gray-200"
+                } rounded-lg shadow">
+                    <p class="text-sm">${message}</p>
+                </div>
+            </div>`;
+    }
+</script>
+</body>
+</html>
